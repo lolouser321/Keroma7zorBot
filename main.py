@@ -2,12 +2,10 @@ import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater, CommandHandler, MessageHandler, Filters, 
-    CallbackContext, CallbackQueryHandler
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    ContextTypes, CallbackQueryHandler, filters
 )
 import openai
-import requests
-import json
 from dotenv import load_dotenv
 
 # تحميل متغيرات البيئة
@@ -47,7 +45,6 @@ WELCOME_MESSAGE = """
 لطلب المساعدة اكتب: /help
 """
 
-# رسالة المساعدة
 HELP_MESSAGE = f"""
 🤖 أوامر البوت:
 
@@ -64,16 +61,27 @@ HELP_MESSAGE = f"""
 🔗 رابط القناة: {CHANNEL_USERNAME}
 """
 
-def start(update: Update, context: CallbackContext) -> None:
+# =================== الأوامر ===================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔊 فك الميوت من القناة", callback_data='unmute')],
         [InlineKeyboardButton("🎵 تشغيل أغنية", callback_data='play_song')],
         [InlineKeyboardButton("❓ المساعدة", callback_data='help')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(WELCOME_MESSAGE, reply_markup=reply_markup)
+    await update.message.reply_text(WELCOME_MESSAGE, reply_markup=reply_markup)
 
-def unmute_instructions(update: Update, context: CallbackContext) -> None:
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🔊 فك الميوت", callback_data='unmute')],
+        [InlineKeyboardButton("🎵 تشغيل أغاني", callback_data='play_song')],
+        [InlineKeyboardButton("🤖 الذكاء الاصطناعي", callback_data='ai_help')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(HELP_MESSAGE, reply_markup=reply_markup)
+
+async def unmute_instructions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     instructions = """
 🔊 طريقة فك الميوت من القناة:
 
@@ -86,24 +94,15 @@ def unmute_instructions(update: Update, context: CallbackContext) -> None:
 ✅ بعد ما تكمل الخطوات دي، ارجع هنا واكتب:
 /check_mute للتأكد من إنك فككت الميوت
 """
-    update.message.reply_text(instructions)
+    await update.message.reply_text(instructions)
 
-def check_mute_status(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text(
+async def check_mute_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "⚠️ ملحوظة: البوت مش ممكن يتأكد من حالة الميوت تلقائيًا.\n\n"
         "تأكد بنفسك من إنك فككت الميوت من القناة @strongest_live_tiktok"
     )
 
-def help_command(update: Update, context: CallbackContext) -> None:
-    keyboard = [
-        [InlineKeyboardButton("🔊 فك الميوت", callback_data='unmute')],
-        [InlineKeyboardButton("🎵 تشغيل أغاني", callback_data='play_song')],
-        [InlineKeyboardButton("🤖 الذكاء الاصطناعي", callback_data='ai_help')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(HELP_MESSAGE, reply_markup=reply_markup)
-
-def ai_response(update: Update, context: CallbackContext) -> None:
+async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     try:
         response = openai.ChatCompletion.create(
@@ -116,45 +115,44 @@ def ai_response(update: Update, context: CallbackContext) -> None:
             temperature=0.7
         )
         ai_answer = response.choices[0].message.content
-        update.message.reply_text(f"🤖 {ai_answer}")
+        await update.message.reply_text(f"🤖 {ai_answer}")
     except Exception as e:
         logger.error(f"Error in AI response: {e}")
-        update.message.reply_text("😔 حصل خطأ في الاتصال بالذكاء الاصطناعي. جرب تاني.")
+        await update.message.reply_text("😔 حصل خطأ في الاتصال بالذكاء الاصطناعي. جرب تاني.")
 
-def play_song(update: Update, context: CallbackContext) -> None:
+async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text.lower()
-    song_keywords = ['أغنية', 'شغل', 'أغنيه', 'تشغيل', 'عمرو دياب', 'محمد منير', 'بابا', 'أغاني']
-
-    if any(keyword in user_message for keyword in song_keywords):
+    keywords = ['أغنية', 'شغل', 'أغنيه', 'تشغيل', 'عمرو دياب', 'محمد منير', 'بابا', 'أغاني']
+    if any(keyword in user_message for keyword in keywords):
         song_name = extract_song_name(user_message)
         if song_name:
-            search_message = f"🎵 ببحث عن: {song_name}\n\n⚠️ مفيش تشغيل مباشر دلوقتي، استخدم تطبيقات زي:\n• Spotify\n• YouTube Music\n• Anghami"
-            update.message.reply_text(search_message)
+            await update.message.reply_text(
+                f"🎵 ببحث عن: {song_name}\n\n⚠️ مفيش تشغيل مباشر دلوقتي، استخدم تطبيقات زي:\n• Spotify\n• YouTube Music\n• Anghami"
+            )
         else:
-            update.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها.")
+            await update.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها.")
     else:
-        ai_response(update, context)
+        await ai_response(update, context)
 
 def extract_song_name(message: str) -> str:
     keywords_to_remove = ['أغنية', 'شغل', 'أغنيه', 'تشغيل']
-    song_name = message
     for keyword in keywords_to_remove:
-        song_name = song_name.replace(keyword, '')
-    return song_name.strip() if song_name.strip() else None
+        message = message.replace(keyword, '')
+    return message.strip()
 
-def button_handler(update: Update, context: CallbackContext) -> None:
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
     if query.data == 'unmute':
-        unmute_instructions(update, context)
+        await unmute_instructions(update, context)
     elif query.data == 'play_song':
-        query.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها.")
+        await query.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها.")
     elif query.data == 'help':
-        help_command(update, context)
+        await help_command(update, context)
     elif query.data == 'ai_help':
-        query.message.reply_text("🤖 اسأل أي سؤال وهرد عليك بالمصري.")
+        await query.message.reply_text("🤖 اسأل أي سؤال وهرد عليك بالمصري.")
 
-def new_member(update: Update, context: CallbackContext) -> None:
+async def new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for member in update.message.new_chat_members:
         welcome_text = f"""
 🎉 مرحباً {member.first_name}! 
@@ -169,24 +167,23 @@ def new_member(update: Update, context: CallbackContext) -> None:
             [InlineKeyboardButton("🎵 تشغيل أغنية", callback_data='play_song')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text(welcome_text, reply_markup=reply_markup)
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
-def main() -> None:
-    updater = Updater(TOKEN)
-    dispatcher = updater.dispatcher
+# =================== التشغيل ===================
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("help", help_command))
-    dispatcher.add_handler(CommandHandler("unmute", unmute_instructions))
-    dispatcher.add_handler(CommandHandler("check_mute", check_mute_status))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("unmute", unmute_instructions))
+    app.add_handler(CommandHandler("check_mute", check_mute_status))
 
-    dispatcher.add_handler(MessageHandler(Filters.status_update.new_chat_members, new_member))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, play_song))
-    dispatcher.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, play_song))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
-    updater.start_polling()
     logger.info("البوت اشتغل!")
-    updater.idle()
+    app.run_polling()
 
 if __name__ == '__main__':
     main()
