@@ -1,91 +1,231 @@
 import os
-import telebot
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Updater, CommandHandler, MessageHandler, Filters, 
+    CallbackContext, CallbackQueryHandler
+)
+import openai
 import requests
-from yt_dlp import YoutubeDL
+import json
+from dotenv import load_dotenv
 
-# ====== جلب القيم السرية من Environment Variables ======
-TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_KEY")
-CHANNEL_ID = os.environ.get("CHANNEL_ID")  # ممكن تضيفه في المتغيرات لو هتربط القناة
+# إعداد التسجيل
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-bot = telebot.TeleBot(TOKEN)
+# إعداد OpenAI
+openai.api_key = "YOUR_OPENAI_API_KEY"  # ضع مفتاح API الخاص بك
 
-# ====== Banner الترحيب ======
-BANNER_URL = "https://i.ibb.co/QDQSLpH/banner.png"  # الصورة الترحيبية
+# اسم القناة
+CHANNEL_USERNAME = "@strongest_live_tiktok"
 
-@bot.chat_member_handler()
-def welcome_new_user(message: telebot.types.ChatMemberUpdated):
-    if message.new_chat_member and message.new_chat_member.status == "member":
-        user_name = message.new_chat_member.user.first_name
-        bot.send_photo(
-            message.chat.id,
-            BANNER_URL,
-            caption=(
-                f"أهلا بيك يا {user_name} في قناة strongest live tiktok 🌟\n"
-                "متنساش تشيل الميوت من على القناة لو معمول 🔔\n\n"
-                "علشان تتأكد إن الميوت مش شغال:\n"
-                "1️⃣ افتح القناة\n"
-                "2️⃣ دوس على اسم القناة فوق\n"
-                "3️⃣ شوف علامة الجرس 🔔 لو عليه خط، شيله\n\n"
-                "استمتع معانا 🎉"
-            )
+# رسالة الترحيب
+WELCOME_MESSAGE = """
+🎉 مرحباً بيك في قناتنا الرسمية!
+
+🎵 قناة Strongest Live TikTok
+🔥 أقوى محتوى تيك توك مباشر
+
+📌 خطوات فك الميوت:
+1. اضغط على "🔊 فك الميوت"
+2. اتبع التعليمات اللي هتظهرلك
+3. تأكد من إنك مش ميوت من القناة
+
+🎯 مميزات البوت:
+• 🤖 ذكاء اصطناعي للإجابة على الأسئلة
+• 🎵 تشغيل الأغاني مباشرة
+• 💬 مساعدة فورية
+
+لطلب المساعدة اكتب: /help
+"""
+
+# رسالة المساعدة
+HELP_MESSAGE = """
+🤖 أوامر البوت:
+
+🎵 تشغيل الأغاني:
+اكتب: أغنية عمرو دياب بابا
+او: شغل أغانى محمد منير
+
+❓ الأسئلة والاستفسارات:
+اكتب سؤالك مباشرة وانا هرد عليك بالمصري
+
+🔊 فك الميوت:
+اضغط على الزر أدناه عشان تفك الميوت من القناة
+
+🔗 رابط القناة: {}
+""".format(CHANNEL_USERNAME)
+
+def start(update: Update, context: CallbackContext) -> None:
+    """رسالة البداية"""
+    keyboard = [
+        [InlineKeyboardButton("🔊 فك الميوت من القناة", callback_data='unmute')],
+        [InlineKeyboardButton("🎵 تشغيل أغنية", callback_data='play_song')],
+        [InlineKeyboardButton("❓ المساعدة", callback_data='help')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    update.message.reply_text(WELCOME_MESSAGE, reply_markup=reply_markup)
+
+def unmute_instructions(update: Update, context: CallbackContext) -> None:
+    """تعليمات فك الميوت"""
+    instructions = """
+🔊 طريقة فك الميوت من القناة:
+
+1️⃣ ادخل لقناة @strongest_live_tiktok
+2️⃣ اضغط على اسم القناة في أعلى الشاشة
+3️⃣ ابحث عن زر "التنبيهات" أو "Notifications"
+4️⃣ اضغط عليه وابحث عن "إلغاء الكتم" أو "Unmute"
+5️⃣ اضغط على "تم" أو "Done"
+
+✅ بعد ما تكمل الخطوات دي، ارجع هنا واكتب:
+/check_mute للتأكد من إنك فككت الميوت
+
+📌 ملحوظة: ممكن تاخد دقيقة أو اتنين عشان التحديث يحصل
+"""
+    update.message.reply_text(instructions)
+
+def check_mute_status(update: Update, context: CallbackContext) -> None:
+    """التحقق من حالة الميوت"""
+    update.message.reply_text("⚠️ ملحوظة: البوت مش ممكن يتأكد من حالة الميوت تلقائيًا.\n\nتأكد بنفسك من إنك فككت الميوت من القناة @strongest_live_tiktok")
+
+def help_command(update: Update, context: CallbackContext) -> None:
+    """أمر المساعدة"""
+    keyboard = [
+        [InlineKeyboardButton("🔊 فك الميوت", callback_data='unmute')],
+        [InlineKeyboardButton("🎵 تشغيل أغاني", callback_data='play_song')],
+        [InlineKeyboardButton("🤖 الذكاء الاصطناعي", callback_data='ai_help')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    update.message.reply_text(HELP_MESSAGE, reply_markup=reply_markup)
+
+def ai_response(update: Update, context: CallbackContext) -> None:
+    """الرد باستخدام الذكاء الاصطناعي"""
+    user_message = update.message.text
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "أنت مساعد ذكي لمجموعة تيليجرام. ردا بالمصري العامي بطريقة ودودة ومفيدة. أجب باللغة العربية فقط."},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=500,
+            temperature=0.7
         )
+        
+        ai_answer = response.choices[0].message.content
+        update.message.reply_text(f"🤖 {ai_answer}")
+        
+    except Exception as e:
+        logger.error(f"Error in AI response: {e}")
+        update.message.reply_text("😔 عذراً، حصل خطأ في الاتصال بالذكاء الاصطناعي. جرب تاني كده.")
 
-# ====== ذكاء اصطناعي (OpenAI GPT) ======
-def ask_gpt(prompt):
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "انت مساعد شقي وبترد بالمصري الشعبي."},
-            {"role": "user", "content": prompt}
+def play_song(update: Update, context: CallbackContext) -> None:
+    """تشغيل الأغاني"""
+    user_message = update.message.text.lower()
+    
+    # البحث عن كلمات تدل على طلب أغنية
+    song_keywords = ['أغنية', 'شغل', 'أغنيه', 'تشغيل', 'عمرو دياب', 'محمد منير', 'بابا', 'أغاني']
+    
+    if any(keyword in user_message for keyword in song_keywords):
+        # استخراج اسم الأغنية
+        song_name = extract_song_name(user_message)
+        
+        if song_name:
+            search_message = f"🎵 ببحث عن: {song_name}\n\n⚠️ ملحوظة: لأسباب قانونية، البوت مش ممكن يشغل الأغاني مباشرة، لكن ممكن تستخدم تطبيقات زي:\n• Spotify\n• YouTube Music\n• Anghami\n• Deezer"
+            
+            update.message.reply_text(search_message)
+        else:
+            update.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها، مثلاً:\n'أغنية عمرو دياب بابا'\n'شغل محمد منير'")
+    else:
+        # إذا كانت الرسالة عادية، نرسلها للذكاء الاصطناعي
+        ai_response(update, context)
+
+def extract_song_name(message: str) -> str:
+    """استخراج اسم الأغنية من الرسالة"""
+    # إزالة الكلمات المفتاحية
+    keywords_to_remove = ['أغنية', 'شغل', 'أغنيه', 'تشغيل']
+    
+    song_name = message
+    for keyword in keywords_to_remove:
+        song_name = song_name.replace(keyword, '')
+    
+    song_name = song_name.strip()
+    
+    return song_name if song_name else None
+
+def button_handler(update: Update, context: CallbackContext) -> None:
+    """معالجة الضغط على الأزرار"""
+    query = update.callback_query
+    query.answer()
+    
+    if query.data == 'unmute':
+        unmute_instructions(update, context)
+    elif query.data == 'play_song':
+        query.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها، مثلاً:\n'أغنية عمرو دياب بابا'")
+    elif query.data == 'help':
+        help_command(update, context)
+    elif query.data == 'ai_help':
+        query.message.reply_text("🤖 اسألني أي سؤال وهرد عليك بالمصري!\nمثلاً: 'أيه أجمل أغاني عمرو دياب؟'")
+
+def new_member(update: Update, context: CallbackContext) -> None:
+    """رسالة الترحيب للأعضاء الجدد"""
+    for member in update.message.new_chat_members:
+        welcome_text = f"""
+🎉 مرحباً {member.first_name}! 
+
+🎵 مرحباً بيك في قناتنا الرسمية Strongest Live TikTok!
+
+🔊 عشان تستمتع بالمحتوى:
+1️⃣ اتأكد إنك فككت الميوت من القناة
+2️⃣ استخدم البوت عشان تشغل الأغاني أو تسأل أسئلة
+3️⃣ اكتب /start في البوت عشان تعرف كل المميزات
+
+🤖 البوت: @اسم_البوت_بتاعك
+🔗 القناة: {CHANNEL_USERNAME}
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🔊 فك الميوت", callback_data='unmute')],
+            [InlineKeyboardButton("🎵 تشغيل أغنية", callback_data='play_song')]
         ]
-    }
-    response = requests.post(url, headers=headers, json=data)
-    return response.json()["choices"][0]["message"]["content"]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
-@bot.message_handler(commands=['ask'])
-def ai_reply(message):
-    question = message.text.replace("/ask", "").strip()
-    if not question:
-        bot.reply_to(message, "اكتب السؤال بعد الأمر /ask يا معلم 🤖")
-    else:
-        bot.reply_to(message, "ثانية بس يا نجم بفكر 🤔...")
-        answer = ask_gpt(question)
-        bot.send_message(message.chat.id, answer)
+def main() -> None:
+    """الدالة الرئيسية"""
+    # ضع التوكن بتاع البوت هنا
+    TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+    
+    updater = Updater(TOKEN)
+    dispatcher = updater.dispatcher
 
-# ====== تشغيل أغاني من يوتيوب ======
-@bot.message_handler(commands=['play'])
-def play_song(message):
-    query = message.text.replace("/play", "").strip()
-    if query:
-        bot.reply_to(message, f"بدور على الأغنية: {query} 🎵")
-        ydl_opts = {'format': 'bestaudio', 'outtmpl': 'song.%(ext)s'}
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch:{query}", download=True)['entries'][0]
-            file_path = ydl.prepare_filename(info)
-            bot.send_audio(message.chat.id, open(file_path, 'rb'))
-    else:
-        bot.reply_to(message, "اكتب اسم الأغنية بعد الأمر /play يا نجم 🎧")
+    # الأوامر
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("help", help_command))
+    dispatcher.add_handler(CommandHandler("unmute", unmute_instructions))
+    dispatcher.add_handler(CommandHandler("check_mute", check_mute_status))
 
-# ====== أزرار رئيسية ======
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row("🤖 اسأل سؤال", "🎵 شغل أغنية")
-    bot.send_message(message.chat.id, "أهلا بيك في بوت strongest live tiktok 🔥", reply_markup=keyboard)
+    # رسائل الأعضاء الجدد
+    dispatcher.add_handler(MessageHandler(Filters.status_update.new_chat_members, new_member))
 
-@bot.message_handler(func=lambda message: True)
-def handle_buttons(message):
-    if message.text == "🤖 اسأل سؤال":
-        bot.reply_to(message, "ابعت سؤالك كده مع الأمر /ask 🤖")
-    elif message.text == "🎵 شغل أغنية":
-        bot.reply_to(message, "اكتب اسم الأغنية مع الأمر /play 🎵")
-    else:
-        bot.reply_to(message, "ممكن تستخدم الأزرار أو تكتب أوامر /ask و /play.")
+    # الرسائل النصية
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, play_song))
 
-bot.infinity_polling()
+    # الأزرار
+    dispatcher.add_handler(CallbackQueryHandler(button_handler))
+
+    # بدء البوت
+    updater.start_polling()
+    logger.info("البوت اشتغل!")
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
