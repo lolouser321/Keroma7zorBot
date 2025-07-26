@@ -1,40 +1,79 @@
-import requests
 import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters
+)
+from yt_dlp import YoutubeDL
 
-# هنستخدم المفتاح من Variables
-GEMINI_KEY = os.environ.get("GEMINI_KEY")
+# خد التوكن من Railway Variables (أو حطه هنا لو محلي)
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_لو_محلي")
 
-async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
+# نخزن مين اللي داخل وضع تشغيل الأغاني
+play_mode_users = set()
+
+# ========== /start ==========
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[InlineKeyboardButton("🎵 شغل أغنية", callback_data='play_mode')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🎉 أهلاً بيك! اضغط زر تشغيل الأغاني:", reply_markup=reply_markup)
+
+# ========== تشغيل الأغاني ==========
+async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+
+    # لو المستخدم مش في وضع الأغاني يتجاهل الرسالة
+    if user_id not in play_mode_users:
+        return  
+
+    query = update.message.text
+    play_mode_users.remove(user_id)
+
+    await update.message.reply_text(f"🎵 بحمّل: {query}")
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
-
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": user_message
-                        }
-                    ]
-                }
-            ]
+        # ffmpeg في Railway هيتسطب جوه الـ Docker
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': '%(title)s.%(ext)s',
+            'noplaylist': True,
+            'quiet': True
         }
 
-        headers = {
-            "Content-Type": "application/json"
-        }
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch:{query}", download=True)['entries'][0]
+            file_path = ydl.prepare_filename(info)
 
-        response = requests.post(url, headers=headers, json=payload)
-        data = response.json()
+        # إرسال الملف الصوتي
+        with open(file_path, 'rb') as song:
+            await update.message.reply_audio(audio=song, title=info['title'])
 
-        if "candidates" in data:
-            ai_answer = data["candidates"][0]["content"]["parts"][0]["text"]
-            await update.message.reply_text(f"🤖 {ai_answer}")
-        else:
-            await update.message.reply_text("😔 حصل خطأ في الاتصال بـ Gemini API.")
-            print("Gemini API Error:", data)
+        # حذف الملف بعد الإرسال
+        os.remove(file_path)
 
     except Exception as e:
-        await update.message.reply_text("😔 حصل خطأ في الاتصال بـ Gemini API.")
-        print("Exception:", e)
+        await update.message.reply_text("❌ حصل خطأ أثناء تحميل الأغنية.")
+        print("Error:", e)
+
+# ========== الأزرار ==========
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+
+    if query.data == 'play_mode':
+        play_mode_users.add(user_id)
+        await query.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها:")
+
+# ========== تشغيل البوت ==========
+def main():
+    print("🔥 البوت شغال... جرب /start")
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, play_song))
+    app.add_handler(CallbackQueryHandler(button_handler))
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
