@@ -1,3 +1,5 @@
 pyTelegramBotAPI
 yt-dlp
 requests
+
+pip install python-telegram-bot python-dotenv openai youtube_dl yt-dlp
