@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# تثبيت ffmpeg عشان الأغاني
+# تثبيت ffmpeg (لازم للأغاني)
 RUN apt-get update && apt-get install -y ffmpeg
 
 WORKDIR /app
