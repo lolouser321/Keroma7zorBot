@@ -1,2 +1,0 @@
-# Keroma7zorBot
-Bot
