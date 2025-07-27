@@ -1,76 +1,102 @@
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, ChatMemberHandler, filters
+)
 from yt_dlp import YoutubeDL
+import requests
 
-# خد BOT_TOKEN من الـ Environment Variables لو هتستخدم استضافة، أو ضعه هنا مؤقتًا
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا_لو_بتجرب_محلي")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا_لو_محلي")
+GEMINI_KEY = os.environ.get("GEMINI_KEY", "ضع_مفتاح_API_لو_محلي")
 
-# متغير لتتبع المستخدمين اللي دخلوا وضع التشغيل
 play_mode_users = set()
 
+# ==== ذكاء اصطناعي (Gemini API) ====
+def ask_gemini(prompt):
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        headers = {"Content-Type": "application/json"}
+        r = requests.post(url, json=payload, headers=headers).json()
+        return r["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception as e:
+        print(f"❌ Gemini Error: {e}")
+        return "😅 مش قادر أرد دلوقتي."
+
+# ==== زرار /start ====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("📢 /start command received")  # Debug
     keyboard = [[InlineKeyboardButton("🎵 شغل أغنية", callback_data='play_mode')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🎉 أهلاً بيك! اضغط زر تشغيل الأغاني:", reply_markup=reply_markup)
 
+# ==== تشغيل الأغاني ====
 async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    print(f"📢 رسالة جديدة من {user_id}: {update.message.text}")  # Debug
 
-    # لو المستخدم مش في وضع تشغيل الأغاني
     if user_id not in play_mode_users:
-        print("⛔ المستخدم مش في وضع تشغيل الأغاني")
+        # لو مش في وضع الأغاني، خلي الرسالة للذكاء الاصطناعي
+        question = update.message.text
+        answer = ask_gemini(question)
+        await update.message.reply_text(f"🤖 {answer}")
         return  
 
     query = update.message.text
     play_mode_users.remove(user_id)
-
     await update.message.reply_text(f"🎵 بحمّل: {query}")
-    try:
-        ffmpeg_path = os.path.join(os.getcwd(), "bin")
-        print(f"📂 ffmpeg path: {ffmpeg_path}")
 
+    try:
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': '%(title)s.%(ext)s',
             'noplaylist': True,
-            'quiet': False,  # عشان يطبع تفاصيل التحميل
-            'ffmpeg_location': ffmpeg_path
+            'quiet': False
         }
 
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"ytsearch:{query}", download=True)['entries'][0]
             file_path = ydl.prepare_filename(info)
-            print(f"✅ تم التحميل: {file_path}")
 
         with open(file_path, 'rb') as song:
             await update.message.reply_audio(audio=song, title=info['title'])
 
         os.remove(file_path)
-        print("🗑️ تم مسح الملف")
 
     except Exception as e:
         print(f"❌ Error: {e}")
         await update.message.reply_text("❌ حصل خطأ أثناء تحميل الأغنية.")
 
+# ==== زرار تشغيل الأغاني ====
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-    print(f"📢 الزرار اتضغط من {user_id}")
 
     if query.data == 'play_mode':
         play_mode_users.add(user_id)
         await query.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها:")
 
+# ==== ترحيب بالأعضاء الجدد ====
+async def new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    for member in update.message.new_chat_members:
+        welcome_text = f"""
+🎉 أهلاً بيك يا {member.first_name} في الجروب!
+📌 متنساش تشيل الميوت عشان توصلك كل حاجة.
+
+اكتب /start وجرب زرار الأغاني أو اسأل أي سؤال 👌
+"""
+        await update.message.reply_text(welcome_text)
+
+# ==== Main ====
 def main():
     print("🔥 البوت شغال... جرب /start")
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, play_song))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(ChatMemberHandler(new_member, ChatMemberHandler.CHAT_MEMBER))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, play_song))
+
     app.run_polling()
 
 if __name__ == "__main__":
