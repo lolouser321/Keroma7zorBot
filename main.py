@@ -3,8 +3,10 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from yt_dlp import YoutubeDL
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "حط_التوكن_هنا")
+# خد BOT_TOKEN من الـ Environment Variables لو هتستخدم استضافة، أو ضعه هنا مؤقتًا
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا_لو_بتجرب_محلي")
 
+# متغير لتتبع المستخدمين اللي دخلوا وضع التشغيل
 play_mode_users = set()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -17,7 +19,7 @@ async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     print(f"📢 رسالة جديدة من {user_id}: {update.message.text}")  # Debug
 
-    # لازم يدخل وضع التشغيل الأول
+    # لو المستخدم مش في وضع تشغيل الأغاني
     if user_id not in play_mode_users:
         print("⛔ المستخدم مش في وضع تشغيل الأغاني")
         return  
@@ -34,9 +36,8 @@ async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'format': 'bestaudio/best',
             'outtmpl': '%(title)s.%(ext)s',
             'noplaylist': True,
-            'quiet': False,  # Debug 
-            'ffmpeg_location': ffmpeg_path,
-            'cookiefile': 'youtube.com_cookies.txt' if os.path.exists('youtube.com_cookies.txt') else None
+            'quiet': False,  # عشان يطبع تفاصيل التحميل
+            'ffmpeg_location': ffmpeg_path
         }
 
         with YoutubeDL(ydl_opts) as ydl:
@@ -48,11 +49,11 @@ async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_audio(audio=song, title=info['title'])
 
         os.remove(file_path)
-        print("🗑️ تم مسح الملف بعد الإرسال")
+        print("🗑️ تم مسح الملف")
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        await update.message.reply_text("❌ حصل خطأ أثناء تحميل الأغنية. يمكن محتاج Cookies.")
+        await update.message.reply_text("❌ حصل خطأ أثناء تحميل الأغنية.")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
