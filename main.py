@@ -3,10 +3,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from yt_dlp import YoutubeDL
 
-# خد BOT_TOKEN من الـ Environment Variables لو هتستخدم استضافة، أو ضعه هنا مؤقتًا
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا_لو_بتجرب_محلي")
+BOT_TOKEN = "8340842896:AAFvMaI1g-2kIzRJA-BoLz9qssP5fLGnt00"
 
-# متغير لتتبع المستخدمين اللي دخلوا وضع التشغيل
 play_mode_users = set()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -19,7 +17,6 @@ async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     print(f"📢 رسالة جديدة من {user_id}: {update.message.text}")  # Debug
 
-    # لو المستخدم مش في وضع تشغيل الأغاني
     if user_id not in play_mode_users:
         print("⛔ المستخدم مش في وضع تشغيل الأغاني")
         return  
