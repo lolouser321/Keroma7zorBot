@@ -1,4 +1,5 @@
 import os
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -7,12 +8,13 @@ from telegram.ext import (
 from yt_dlp import YoutubeDL
 import requests
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا_لو_محلي")
-GEMINI_KEY = os.environ.get("GEMINI_KEY", "ضع_مفتاح_API_لو_محلي")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا")
+GEMINI_KEY = os.environ.get("GEMINI_KEY", "ضع_API_هنا")
 
-play_mode_users = set()
+# اختيار الوضع الحالي (افتراضي: تلقائي)
+user_modes = {}
 
-# ==== ذكاء اصطناعي (Gemini API) ====
+# ========== Gemini AI ==========
 def ask_gemini(prompt):
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
@@ -20,37 +22,60 @@ def ask_gemini(prompt):
         headers = {"Content-Type": "application/json"}
         r = requests.post(url, json=payload, headers=headers).json()
         return r["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        print(f"❌ Gemini Error: {e}")
+    except:
         return "😅 مش قادر أرد دلوقتي."
 
-# ==== زرار /start ====
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🎵 شغل أغنية", callback_data='play_mode')]]
+# ========== زرار اختيار الوضع ==========
+async def mode_selector(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🎵 وضع الموسيقى", callback_data='music')],
+        [InlineKeyboardButton("🤖 وضع كيرو-AI", callback_data='ai')]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🎉 أهلاً بيك! اضغط زر تشغيل الأغاني:", reply_markup=reply_markup)
+    await update.message.reply_text("⚡ اختار الوضع اللي تحبه:", reply_markup=reply_markup)
 
-# ==== تشغيل الأغاني ====
-async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+
+    if query.data == 'music':
+        user_modes[user_id] = "music"
+        await query.message.reply_text("🎵 دخلت وضع تشغيل الأغاني! اكتب اسم الأغنية علطول.")
+    elif query.data == 'ai':
+        user_modes[user_id] = "ai"
+        await query.message.reply_text("🤖 دخلت وضع كيرو-AI! اسألني أي سؤال.")
+
+# ========== التعامل مع الرسائل ==========
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
+    text = update.message.text.strip()
 
-    if user_id not in play_mode_users:
-        # لو مش في وضع الأغاني، خلي الرسالة للذكاء الاصطناعي
-        question = update.message.text
-        answer = ask_gemini(question)
-        await update.message.reply_text(f"🤖 {answer}")
-        return  
+    # لو المستخدم اختار وضع موسيقى
+    if user_modes.get(user_id) == "music":
+        return await play_music(update, text)
 
-    query = update.message.text
-    play_mode_users.remove(user_id)
+    # لو المستخدم اختار وضع AI
+    if user_modes.get(user_id) == "ai":
+        return await update.message.reply_text(f"🤖 {ask_gemini(text)}")
+
+    # لو الوضع التلقائي: نحلل النص
+    if re.search(r"(شغل|اغنية|أغنية|أغني|اسمع)", text):
+        return await play_music(update, text)
+
+    # الافتراضي AI
+    return await update.message.reply_text(f"🤖 {ask_gemini(text)}")
+
+# ========== تشغيل الموسيقى ==========
+async def play_music(update: Update, query: str):
     await update.message.reply_text(f"🎵 بحمّل: {query}")
-
     try:
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': '%(title)s.%(ext)s',
             'noplaylist': True,
-            'quiet': False
+            'quiet': False,
+            'cookiefile': 'youtube.com_cookies.txt' if os.path.exists('youtube.com_cookies.txt') else None
         }
 
         with YoutubeDL(ydl_opts) as ydl:
@@ -64,38 +89,34 @@ async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        await update.message.reply_text("❌ حصل خطأ أثناء تحميل الأغنية.")
+        await update.message.reply_text("❌ حصل خطأ أثناء تحميل الأغنية. يمكن تحتاج Cookies.")
 
-# ==== زرار تشغيل الأغاني ====
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    await query.answer()
-
-    if query.data == 'play_mode':
-        play_mode_users.add(user_id)
-        await query.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها:")
-
-# ==== ترحيب بالأعضاء الجدد ====
-async def new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ========== ترحيب الأعضاء الجدد ==========
+async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for member in update.message.new_chat_members:
-        welcome_text = f"""
-🎉 أهلاً بيك يا {member.first_name} في الجروب!
-📌 متنساش تشيل الميوت عشان توصلك كل حاجة.
+        welcome_msg = f"""
+🌟🎉 أهلاً وسهلاً يا {member.first_name}! 🎉🌟
 
-اكتب /start وجرب زرار الأغاني أو اسأل أي سؤال 👌
+🔥 نورت الجروب!  
+💡 تقدر تقول للبوت مباشرة: "شغل اغنية محمد رمضان" أو اسأل أي حاجة في أي وقت.  
+👇 دوس على الزرار لاختيار وضعك المفضل:
 """
-        await update.message.reply_text(welcome_text)
+        keyboard = [
+            [InlineKeyboardButton("🎵 وضع الموسيقى", callback_data='music')],
+            [InlineKeyboardButton("🤖 وضع كيرو-AI", callback_data='ai')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(welcome_msg, reply_markup=reply_markup)
 
-# ==== Main ====
+# ========== MAIN ==========
 def main():
-    print("🔥 البوت شغال... جرب /start")
+    print("🔥 البوت شغال بدون أوامر، اكتب بس اللي عايزه!")
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("mode", mode_selector))  # تغيير الوضع بأي وقت
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(ChatMemberHandler(new_member, ChatMemberHandler.CHAT_MEMBER))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, play_song))
+    app.add_handler(ChatMemberHandler(welcome, ChatMemberHandler.CHAT_MEMBER))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     app.run_polling()
 
