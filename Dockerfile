@@ -1,13 +1,13 @@
-# الصورة الأساسية Python 3.13
-FROM python:3.13-slim
+# الصورة الأساسية Python 3.13# الصورة الأساسية Python
+FROM python:3.11-slim
 
-# تثبيت ffmpeg
+# تثبيت ffmpeg (مهم لتشغيل الأغاني)
 RUN apt-get update && apt-get install -y ffmpeg
 
-# مجلد التطبيق
+# إنشاء مجلد التطبيق
 WORKDIR /app
 
-# نسخ كل الملفات إلى داخل الحاوية
+# نسخ كل الملفات داخل الحاوية
 COPY . /app
 
 # تثبيت المكتبات المطلوبة
