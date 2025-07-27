@@ -1,73 +1,76 @@
 import os
-import yt_dlp
-import uuid
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    CallbackQueryHandler,
-    filters
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from yt_dlp import YoutubeDL
 
-# جلب التوكن من Environment Variables
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# خد BOT_TOKEN من الـ Environment Variables لو هتستخدم استضافة، أو ضعه هنا مؤقتًا
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا_لو_بتجرب_محلي")
 
-# Command /start
+# متغير لتتبع المستخدمين اللي دخلوا وضع التشغيل
+play_mode_users = set()
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("🎵 تشغيل أغنية", callback_data="play_song")]]
+    print("📢 /start command received")  # Debug
+    keyboard = [[InlineKeyboardButton("🎵 شغل أغنية", callback_data='play_mode')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🔥 أهلاً بيك! دوس على الزرار لتشغيل الأغاني.", reply_markup=reply_markup)
+    await update.message.reply_text("🎉 أهلاً بيك! اضغط زر تشغيل الأغاني:", reply_markup=reply_markup)
 
-# لما يضغط على زرار تشغيل الأغاني
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data == "play_song":
-        await query.edit_message_text("🎤 اكتب اسم الأغنية اللي عايزها:")
+async def play_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    print(f"📢 رسالة جديدة من {user_id}: {update.message.text}")  # Debug
 
-# البحث عن الأغنية وتشغيلها
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    song_name = update.message.text
-    await update.message.reply_text(f"🎵 جاري البحث عن: {song_name}")
+    # لو المستخدم مش في وضع تشغيل الأغاني
+    if user_id not in play_mode_users:
+        print("⛔ المستخدم مش في وضع تشغيل الأغاني")
+        return  
 
-    # اسم عشوائي لكل أغنية
-    filename = f"{uuid.uuid4()}.mp3"
+    query = update.message.text
+    play_mode_users.remove(user_id)
 
+    await update.message.reply_text(f"🎵 بحمّل: {query}")
     try:
+        ffmpeg_path = os.path.join(os.getcwd(), "bin")
+        print(f"📂 ffmpeg path: {ffmpeg_path}")
+
         ydl_opts = {
-            'format': 'bestaudio',
-            'outtmpl': filename,
-            # ملف الكوكيز لو موجود
-            'cookiefile': 'youtube.com_cookies.txt' if os.path.exists('youtube.com_cookies.txt') else None
+            'format': 'bestaudio/best',
+            'outtmpl': '%(title)s.%(ext)s',
+            'noplaylist': True,
+            'quiet': False,  # عشان يطبع تفاصيل التحميل
+            'ffmpeg_location': ffmpeg_path
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch:{song_name}", download=True)['entries'][0]
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch:{query}", download=True)['entries'][0]
+            file_path = ydl.prepare_filename(info)
+            print(f"✅ تم التحميل: {file_path}")
 
-        # إرسال الأغنية للمستخدم
-        await update.message.reply_audio(audio=open(filename, 'rb'), title=info['title'])
+        with open(file_path, 'rb') as song:
+            await update.message.reply_audio(audio=song, title=info['title'])
 
-        # مسح الملف بعد الإرسال
-        os.remove(filename)
+        os.remove(file_path)
+        print("🗑️ تم مسح الملف")
 
     except Exception as e:
-        await update.message.reply_text("😢 حصل خطأ أثناء تشغيل الأغنية")
-        print("Error:", e)
+        print(f"❌ Error: {e}")
+        await update.message.reply_text("❌ حصل خطأ أثناء تحميل الأغنية.")
 
-# Main
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+    print(f"📢 الزرار اتضغط من {user_id}")
+
+    if query.data == 'play_mode':
+        play_mode_users.add(user_id)
+        await query.message.reply_text("🎵 اكتب اسم الأغنية اللي عايز تشغلها:")
+
 def main():
-    if not BOT_TOKEN:
-        print("❌ BOT_TOKEN مش موجود في Environment Variables!")
-        return
-
+    print("🔥 البوت شغال... جرب /start")
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, play_song))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-
-    print("🔥 البوت شغال... جرب /start")
     app.run_polling()
 
 if __name__ == "__main__":
