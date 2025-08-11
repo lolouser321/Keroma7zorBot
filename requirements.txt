@@ -1,4 +1,9 @@
-python-telegram-bot==20.3
+python-telegram-bot>=20,<22
+python-dotenv>=1.0
+requests>=2.31
+yt-dlp>=2024.10.22
+pydub>=0.25.1
+
 openai
 requests
 python-dotenv
